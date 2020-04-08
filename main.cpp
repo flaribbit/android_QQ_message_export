@@ -16,7 +16,7 @@ typedef struct{
 
 int GetMd5(unsigned char *data,int datalen,unsigned char *md5){
 	char t[]="0123456789ABCDEF";
-	HMODULE hCryptdll = LoadLibrary("cryptdll.dll");
+	HMODULE hCryptdll = LoadLibraryA("cryptdll.dll");
 	void (WINAPI *MD5Init)(MD5_CTX*) = (void (WINAPI *)(MD5_CTX *))GetProcAddress(hCryptdll, "MD5Init");
 	void (WINAPI *MD5Update)(MD5_CTX*, unsigned char*, unsigned int) = (void (WINAPI *)(MD5_CTX*, unsigned char*, unsigned int))GetProcAddress(hCryptdll, "MD5Update");
 	void (WINAPI *MD5Final)(MD5_CTX*) = (void (WINAPI *)(MD5_CTX*))GetProcAddress(hCryptdll, "MD5Final");
@@ -61,15 +61,14 @@ int ByteDecode(unsigned char *data,int datalen,char *key,int keylen){
 	return 0;
 }
 
-int TextDecode(unsigned char *data,int datalen,char *key,int keylen){
-	int i,j=0,index=0;
-	for(i=0;i<datalen;i++){
-		index=j=i;
-		if(data[index]>0x7f)j++;
-		if(data[index]>0xbf)j++;
-		if(data[index]>0xdf)j++;
-		data[j]^=key[j%keylen];
-	}
+int TextDecode(unsigned char *s,char *key,int keylen){
+	int i=0;
+    unsigned char *p=s;
+    for(;*p;i++,p++){
+        if((*p&0xE0)==0xC0)p+=1;
+        else if((*p&0xF0)==0xE0)p+=2;
+        *p^=key[i%keylen];
+    }
 	return 0;
 }
 
@@ -121,7 +120,7 @@ int GetMsg(sqlite3* db,char *table,char *key,int keylen,char *output){
 	fclose(fp);
 }
 
-int main(int argc,char **argv){
+int main0(int argc,char **argv){
 	if(argc==6){
 		int keylen=strlen(argv[2]);
 		char table[1024];
@@ -140,4 +139,46 @@ int main(int argc,char **argv){
 		printf("msgexport v0.01 by flaribbit\n");
 		printf("usage: msgexport $database_file $seckey group|friend $id $output_file\n");
 	}
+}
+
+void GetNickName(){
+	char buf[10240];
+	//sprintf(buf,"SELECT memberuin,friendnick FROM TroopMemberInfo WHERE troopuin=%s",);
+	sqlite3 *db=NULL;
+	const char *key=KEY;
+	int keylen=strlen((char *)key);
+	int rc=sqlite3_open("2153059054.db",&db);//打开数据库
+	sqlite3_stmt* stmt;
+	sprintf(buf,"SELECT friendnick,memberuin FROM TroopMemberInfo");
+	sqlite3_prepare(db,buf,strlen(buf),&stmt,0);//查询结果
+	for(;;){
+		rc=sqlite3_step(stmt);
+		if(rc==SQLITE_ROW){
+			const unsigned char *s=sqlite3_column_text(stmt,0);
+			TextDecode((unsigned char*)s,(char*)key,keylen);
+			puts((char*)s);
+		}else{
+			break;
+		}
+	}
+}
+
+int main(){
+	GetNickName();
+	return 0;
+	char *key=KEY;
+	int keylen=strlen((char *)key);
+	sqlite3 *db=NULL;
+	//打开数据库
+	int rc=sqlite3_open("2153059054.db",&db);
+	//获取数据
+	unsigned char buf[10240];
+	int bufsize;
+	for(int i=1;i<=180;i++){
+		GetBlob(db,0,"TroopMemberInfo","friendnick",i,buf,&bufsize);
+		TextDecode(buf,key,keylen);
+		fwrite(buf,1,bufsize,stdout);
+		putchar('\n');
+	}
+	sqlite3_close(db);
 }
