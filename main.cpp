@@ -38,7 +38,7 @@ void GetDate(time_t timestamp,char *dt){
 	sprintf(dt,"%04d-%02d-%02d %02d:%02d:%02d",date->tm_year+1900,date->tm_mon+1,date->tm_mday,date->tm_hour,date->tm_min,date->tm_sec);
 }
 
-int GetBlob(sqlite3 *db,char *name,char *table,char *col,int row,unsigned char *buf,int *bufsize){
+int GetBlob(sqlite3 *db,char *name,char *table,char *col,int row,char *buf,int *bufsize){
 	sqlite3_blob *blob;
 	//尝试访问blob
 	int rc=sqlite3_blob_open(db,name,table,col,row,0,&blob);
@@ -61,13 +61,11 @@ int ByteDecode(unsigned char *data,int datalen,char *key,int keylen){
 	return 0;
 }
 
-int TextDecode(unsigned char *s,char *key,int keylen){
-	int i=0;
-    unsigned char *p=s;
-    for(;*p;i++,p++){
-        if((*p&0xE0)==0xC0)p+=1;
-        else if((*p&0xF0)==0xE0)p+=2;
-        *p^=key[i%keylen];
+int TextDecode(char *s,int len,const char *key,int keylen){
+    for(int i=0,j=0;i<len;i++,j++){
+        if((s[i]&0xE0)==0xC0)i+=1;
+        else if((s[i]&0xF0)==0xE0)i+=2;
+        s[i]^=key[j%keylen];
     }
 	return 0;
 }
@@ -149,14 +147,21 @@ void GetNickName(){
 	int keylen=strlen((char *)key);
 	int rc=sqlite3_open("2153059054.db",&db);//打开数据库
 	sqlite3_stmt* stmt;
-	sprintf(buf,"SELECT friendnick,memberuin FROM TroopMemberInfo");
+	sprintf(buf,"SELECT memberuin,friendnick FROM TroopMemberInfo LIMIT 10");
 	sqlite3_prepare(db,buf,strlen(buf),&stmt,0);//查询结果
+	#define GetString(col,buf,len) len=sqlite3_column_bytes(stmt,col);memcpy(buf,(const char*)sqlite3_column_text(stmt,col),len+1)
 	for(;;){
 		rc=sqlite3_step(stmt);
 		if(rc==SQLITE_ROW){
-			const unsigned char *s=sqlite3_column_text(stmt,0);
-			TextDecode((unsigned char*)s,(char*)key,keylen);
-			puts((char*)s);
+			char s[1024];
+			int len;
+			GetString(0,s,len);
+			TextDecode(s,len,key,keylen);
+			printf(s);
+			printf("\t");
+			GetString(1,s,len);
+			TextDecode(s,len,key,keylen);
+			puts(s);
 		}else{
 			break;
 		}
@@ -172,11 +177,11 @@ int main(){
 	//打开数据库
 	int rc=sqlite3_open("2153059054.db",&db);
 	//获取数据
-	unsigned char buf[10240];
+	char buf[10240];
 	int bufsize;
 	for(int i=1;i<=180;i++){
 		GetBlob(db,0,"TroopMemberInfo","friendnick",i,buf,&bufsize);
-		TextDecode(buf,key,keylen);
+		// TextDecode(buf,len,key,keylen);
 		fwrite(buf,1,bufsize,stdout);
 		putchar('\n');
 	}

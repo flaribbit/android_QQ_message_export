@@ -3,3 +3,5 @@ key.h
 *.dll
 *.exe
 *.db
+*.db-shm
+*.db-wal
