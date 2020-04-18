@@ -4,8 +4,13 @@
 #include <stdlib.h>
 #include <windows.h>
 #include <wincrypt.h>
+#include <map>
+#include <string>
 #include "key.h"
 #include "sqlite3.h"
+
+const char *key=KEY;
+const int keylen=strlen(key);
 
 typedef struct{
 	ULONG i[2];
@@ -61,18 +66,37 @@ int ByteDecode(unsigned char *data,int datalen,char *key,int keylen){
 	return 0;
 }
 
-int TextDecode(char *s,int len,const char *key,int keylen){
+char* TextDecode(char *s,int len,const char *key,int keylen){
     for(int i=0,j=0;i<len;i++,j++){
         if((s[i]&0xE0)==0xC0)i+=1;
         else if((s[i]&0xF0)==0xE0)i+=2;
         s[i]^=key[j%keylen];
     }
-	return 0;
+	return s;
 }
 
 int GetCounts(void*a,int c,char**v,char**n){
 	*(int*)a=atoi(*v);
 	return 0;
+}
+
+char* StringToSQLChar(char *raw){
+	static char s[256];
+	char buf[32];
+	char *p=s+5;
+	int len=strlen(raw);
+	strcpy(buf,raw);
+	TextDecode(buf,len,key,keylen);
+	strcpy(s,"char(");
+	for(int i=0;i<len;i++){
+		if(buf[i]>=10)
+			*p++='0'+buf[i]/10;
+		*p++='0'+buf[i]%10;
+		if(i<len-1)
+			*p++=',';
+	}
+	*p=')';
+	return s;
 }
 
 int GetMsg(sqlite3* db,char *table,char *key,int keylen,char *output){
@@ -141,30 +165,24 @@ int main0(int argc,char **argv){
 
 void GetNickName(){
 	char buf[10240];
-	//sprintf(buf,"SELECT memberuin,friendnick FROM TroopMemberInfo WHERE troopuin=%s",);
 	sqlite3 *db=NULL;
-	const char *key=KEY;
-	int keylen=strlen((char *)key);
 	int rc=sqlite3_open("2153059054.db",&db);//打开数据库
 	sqlite3_stmt* stmt;
-	sprintf(buf,"SELECT memberuin,friendnick FROM TroopMemberInfo LIMIT 10");
+	sprintf(buf,"SELECT memberuin,friendnick,troopnick FROM TroopMemberInfo WHERE troopuin=%s",StringToSQLChar(""));
 	sqlite3_prepare(db,buf,strlen(buf),&stmt,0);//查询结果
 	#define GetString(col,buf,len) len=sqlite3_column_bytes(stmt,col);memcpy(buf,(const char*)sqlite3_column_text(stmt,col),len+1)
-	for(;;){
-		rc=sqlite3_step(stmt);
-		if(rc==SQLITE_ROW){
-			char s[1024];
-			int len;
-			GetString(0,s,len);
-			TextDecode(s,len,key,keylen);
-			printf(s);
-			printf("\t");
-			GetString(1,s,len);
-			TextDecode(s,len,key,keylen);
-			puts(s);
-		}else{
-			break;
-		}
+	using namespace std;
+	map<string,string>dict;
+	while(sqlite3_step(stmt)==SQLITE_ROW){
+		char s[128];
+		int len;
+		GetString(0,s,len);
+		string id=TextDecode(s,len,key,keylen);
+		GetString(1,s,len);
+		dict[id]=string(TextDecode(s,len,key,keylen));
+	}
+	for(auto i:dict){
+		printf("%s\t%s\n",i.first.c_str(),i.second.c_str());
 	}
 }
 
